@@ -8,6 +8,24 @@ import { resolve, join } from 'node:path';
 import { once } from 'node:events';
 const exec = promisify(execFile);
 
+test('remote HTTP requires opt-in and user installation preserves it', async () => {
+  const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'bbm-http-'));
+  const setup = (...args) => exec(process.execPath, [resolve('scripts/setup.js'), ...args]);
+  const hub = join(root, 'hub');
+  const args = ['hub', '--dir', hub, '--room', 'demo', '--members', 'alice,bob', '--url', 'http://192.0.2.1:8787'];
+  try {
+    await assert.rejects(setup(...args), /explicit --allow-http/);
+    assert.equal(existsSync(hub), false);
+    await setup(...args, '--allow-http');
+    assert.match(readFileSync(join(hub, 'hub.env'), 'utf8'), /BBM_HOST=0.0.0.0/);
+    const personal = join(hub, '.bbm/alice.env');
+    assert.match(readFileSync(personal, 'utf8'), /BBM_ALLOW_HTTP=true/);
+    const target = join(root, 'user');
+    await setup('user', '--dir', target, '--env', personal, '--skills-dir', join(root, 'skills'));
+    assert.match(readFileSync(join(target, 'personal.env'), 'utf8'), /BBM_ALLOW_HTTP=true/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('install Hub and two user copies with skills, refuse overwrite, run from unrelated cwd', async () => {
   const root = mkdtempSync(join(realpathSync.native(tmpdir()), 'bbm-install-'));
   const hub = join(root, 'hub copy');

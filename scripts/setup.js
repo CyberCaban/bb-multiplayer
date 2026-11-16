@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const [kind, ...args] = process.argv.slice(2);
 const options = {};
-const usage = 'npm run setup:hub -- --dir <new-folder> --room <room> --members alice,bob --url https://hub.example.com\nnpm run setup:user -- --dir <new-folder> --env <personal.env> [--skills-dir <BB-skills-folder>]';
+const usage = 'npm run setup:hub -- --dir <new-folder> --room <room> --members alice,bob --url https://hub.example.com [--allow-http]\nnpm run setup:user -- --dir <new-folder> --env <personal.env> [--skills-dir <BB-skills-folder>] [--allow-http]';
 const quoteSh = value => `'${value.replaceAll("'", "'\\''")}'`;
 const quotePs = value => `'${value.replaceAll("'", "''")}'`;
 function write(file, content, mode = 0o600) { writeFileSync(file, content, { flag: 'wx', mode }); }
@@ -24,6 +24,7 @@ try {
   if (!['hub', 'user'].includes(kind)) throw new Error(usage);
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i]; const value = args[i + 1];
+    if (key === '--allow-http') { if (options[key]) throw new Error('Duplicate --allow-http'); options[key] = true; i--; continue; }
     if (!['--dir', '--room', '--members', '--url', '--env', '--skills-dir'].includes(key) || !value || value.startsWith('--') || Object.hasOwn(options, key)) throw new Error(`Invalid option: ${key}\n${usage}`);
     options[key] = value;
   }
@@ -36,6 +37,7 @@ try {
   let url;
   let names;
   let skillTarget;
+  let allowHttp = options['--allow-http'] === true;
   if (kind === 'hub') {
     names = options['--members']?.split(',');
     if (!options['--room'] || names?.length !== 2) throw new Error('--room and --members alice,bob are required');
@@ -44,15 +46,19 @@ try {
     if (!options['--env']) throw new Error('--env is required');
     personal = readFileSync(resolve(options['--env']), 'utf8');
     const config = parseEnv(personal);
+    allowHttp ||= config.BBM_ALLOW_HTTP === 'true';
     for (const key of ['BBM_HUB_URL', 'BBM_ROOM', 'BBM_NAME', 'BBM_TOKEN']) if (!config[key]) throw new Error(`Missing ${key} in personal env file`);
     // Copy only client settings, never server options from an arbitrary env file.
     personal = ['BBM_HUB_URL', 'BBM_ROOM', 'BBM_NAME', 'BBM_TOKEN'].map(k => `${k}=${JSON.stringify(config[k])}\n`).join('');
+    if (allowHttp) personal += 'BBM_ALLOW_HTTP=true\n';
     url = new URL(config.BBM_HUB_URL);
     skillTarget = join(resolve(options['--skills-dir'] || join(homedir(), '.bb', 'skills')), 'bb-multiplayer');
     if (existsSync(skillTarget)) throw new Error(`Skill already exists: ${skillTarget}; nothing overwritten`);
   }
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Hub URL must be an origin without credentials, path, query or fragment');
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('Remote Hub requires HTTPS');
+  const remoteHttp = url.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && (!remoteHttp || allowHttp))) throw new Error('Remote Hub requires HTTPS or explicit --allow-http');
+  if (remoteHttp) console.error('Warning: HTTP sends tokens and messages without encryption. Use a trusted network or VPN.');
   mkdirSync(target, { recursive: true });
   let createdSkill = false;
   try {
@@ -64,9 +70,9 @@ try {
       if (result.status !== 0) throw new Error(result.stderr || 'Hub initialization failed');
       for (const name of names) {
         const path = join(target, '.bbm', `${name}.env`);
-        writeFileSync(path, readFileSync(path, 'utf8').replace('http://127.0.0.1:8787', url.origin), { mode: 0o600 });
+        writeFileSync(path, readFileSync(path, 'utf8').replace('http://127.0.0.1:8787', url.origin) + (allowHttp ? 'BBM_ALLOW_HTTP=true\n' : ''), { mode: 0o600 });
       }
-      write(join(target, 'hub.env'), `BBM_DATA_DIR=${JSON.stringify(join(target, '.bbm').replaceAll('\\', '/'))}\nBBM_HOST=127.0.0.1\nBBM_PORT=8787\n`);
+      write(join(target, 'hub.env'), `BBM_DATA_DIR=${JSON.stringify(join(target, '.bbm').replaceAll('\\', '/'))}\nBBM_HOST=${remoteHttp ? '0.0.0.0' : '127.0.0.1'}\nBBM_PORT=8787\n`);
       launchers(target, 'start-hub', { cmd: '--env "%~dp0hub.env" hub', ps: "--env (Join-Path $PSScriptRoot 'hub.env') hub", sh: '--env "$SCRIPT_DIR/hub.env" hub' });
     } else {
       write(join(target, 'personal.env'), personal);

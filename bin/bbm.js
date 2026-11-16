@@ -53,7 +53,7 @@ async function main() {
   if (command === 'send-message') route = ['POST', '/messages', { text: required(rest[0], 'message'), to: rest[1] ?? null }];
   if (!route) throw new Error('Unknown command; run bbm help');
   const base = new URL(required(env.BBM_HUB_URL, 'BBM_HUB_URL'));
-  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw new Error('Use HTTPS for a remote Hub');
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && (['localhost', '127.0.0.1', '[::1]'].includes(base.hostname) || env.BBM_ALLOW_HTTP === 'true'))) throw new Error('Use HTTPS for a remote Hub or explicitly set BBM_ALLOW_HTTP=true for a trusted network');
   const token = required(env.BBM_TOKEN, 'BBM_TOKEN');
   const room = required(env.BBM_ROOM, 'BBM_ROOM');
   const name = required(env.BBM_NAME, 'BBM_NAME');
