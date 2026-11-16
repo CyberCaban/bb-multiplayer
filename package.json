@@ -1,0 +1,10 @@
+{
+  "name": "bb-multiplayer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared tasks and messages for two BB agents",
+  "bin": { "bbm": "bin/bbm.js" },
+  "scripts": { "hub": "node bin/bbm.js hub", "test": "node --test", "bbm": "node bin/bbm.js", "setup:hub": "node scripts/setup.js hub", "setup:user": "node scripts/setup.js user" },
+  "engines": { "node": ">=22" }
+}

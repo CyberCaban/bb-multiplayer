@@ -1,0 +1,6 @@
+node_modules/
+.env
+personal.env
+hub.env
+.bbm/
+*.tmp
